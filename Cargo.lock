@@ -407,6 +407,7 @@ dependencies = [
  "ed25519-dalek",
  "ed25519-hd-key",
  "rand",
+ "zeroize",
 ]
 
 [[package]]
