@@ -5,6 +5,7 @@ use ed25519_hd_key;
 use ed25519_dalek::{SigningKey};
 use bs58;
 use zeroize::{self, Zeroize};
+use std::fs;
 use std::{io::Write,env, fs::OpenOptions, error::Error};
 use std::process::exit;
 // mnemonic -> seed -> derivedseed -> keys
@@ -16,13 +17,22 @@ struct Secret{
     phrase: String
 }
 
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.phrase.zeroize();
+    }
+}
+
+
+
 fn main(){
     let arguments: Vec<String> = env::args().collect();
-    if arguments.len() < 2 {
-        println!("Usage: cargo run -- <words> <wallet_number>");
+    if arguments.len() < 4 {
+        println!("Usage: cargo run -- <words> <wallet_number> <file_path>");
         exit(1)
     }
     let wallets: Result<u8, _> = arguments[2].parse();
+    let file_path: String = arguments[3].clone();
     let k = match wallets{
         Ok(x) => x,
         Err(y) => {
@@ -30,17 +40,17 @@ fn main(){
             exit(1);
         }
     };
-    for i in 1..=k{
-        let m = generate_mnemonic(Some(arguments[1].parse().unwrap()));
-        let path = "m/44'/501'/0'/0'";
-        let (keypair, priv_k,  pub_k , phrase) = generate_keys(Some(m), path);
+    let m = generate_mnemonic(Some(arguments[1].parse().unwrap()));
+    for i in 0..k{
+        let path = format!("m/44'/501'/{}'/0'",i);
+        let (keypair, priv_k,  pub_k , phrase) = generate_keys(Some(m.clone()), &path);
         let acc1 = Secret{
             keypair,
             pub_key: pub_k,
             priv_key: priv_k,
             phrase
         };
-        let _ = add_to_file("file_path",acc1,i);
+        let _ = add_to_file(&file_path,acc1,i);
         
         
     }
@@ -90,49 +100,55 @@ pub fn generate_mnemonic(n_words: Option<u8>) -> Mnemonic{
 }
 
 
-fn add_to_file(file_path: &str, s: Secret, i: u8) -> Result<(), Box<dyn Error>>{
+fn add_to_file(file_path: &str, s: Secret, i: u8) -> Result<(), Box<dyn Error>> {
     let mut pub_b58 = bs58::encode(&s.pub_key).into_string();
-let mut priv_b58 = bs58::encode(&s.priv_key).into_string();
-    let contents = format!(
-r#"
-================================================================================
-WALLET #{i}
-================================================================================
+    let mut priv_b58 = bs58::encode(&s.priv_key).into_string();
 
-Mnemonic  (KEEP SECRET • DO NOT SHARE)
--------------------------------------
-{mnemonic}
+    if i == 0 {
+        let header = format!(
+            r#"
+            ================================================================================
+            SOLANA HD WALLET EXPORT
+            ================================================================================
 
-Public Key (Base58)
-------------------
-{public_key}
+            MASTER MNEMONIC (KEEP SECRET • DO NOT SHARE)
+            -------------------------------------------
+            {mnemonic}
+            ================================================================================
+            "#,mnemonic = s.phrase);
 
-Private Key (Base58)
--------------------
-{private_key}
+        fs::write(file_path, header)?;
+    }
 
-Raw Keypair (Ed25519 • 64 bytes)
---------------------------------
-{keypair:?}
+    let wallet_block = format!(
+            r#"
+            WALLET #{i}
+            -------------------------------------------
+            Public Key (Base58)
+            ------------------
+            {public_key}
 
-================================================================================
-"#,
-    i = i,
-    mnemonic = s.phrase,
-    public_key = pub_b58,
-    private_key = priv_b58,
-    keypair = s.keypair,
-);
+            Private Key (Base58)
+            -------------------
+            {private_key}
+
+            Raw Keypair (Ed25519 • 64 bytes)
+            --------------------------------
+            {keypair:?}"#,
+        i = i+1,
+        public_key = pub_b58,
+        private_key = priv_b58,
+        keypair = s.keypair,
+    );
+
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(file_path)?;
+
+    writeln!(file, "{}", wallet_block)?;
 
     pub_b58.zeroize();
     priv_b58.zeroize();
-     let mut file = OpenOptions::new()
-        .write(true) // write access is required
-        .append(true)
-        .create(true) // create the file if it does not exist
-        .open(file_path)
-        .expect("Failed to open file");
-    writeln!(file, "{}", contents)
-        .expect("Failed to write to file");
+
     Ok(())
 }
