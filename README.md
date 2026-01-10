@@ -1,4 +1,4 @@
-# Solana HD Wallet Generator
+# s33d - Solana HD Wallet Generator
 
 A secure command-line tool for generating multiple Solana wallets from a single BIP39 mnemonic using hierarchical deterministic (HD) key derivation.
 
